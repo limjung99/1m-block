@@ -2,7 +2,6 @@
 #include "mylibnet.h"
 /* banned ip */
 unordered_map<string,bool> hash_map;
-string banned_domains="top-1m.csv";
 
 const char* get_http_host(const char* http_data) {
     const char* host_marker = "Host: ";
@@ -128,7 +127,11 @@ static int cb(struct nfq_q_handle *qh, struct nfgenmsg *nfmsg,
 
 int main(int argc, char **argv)
 {
-
+	if(argc!=2){
+		cout<<"Wrong usge\n";
+		return -1;
+	}
+	string banned_domains = string(argv[1]);
     /* fread to make hash hit table */
 	ifstream fs;
 	fs.open(banned_domains);
