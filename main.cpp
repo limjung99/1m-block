@@ -1,7 +1,7 @@
 #include "pch.h"
 #include "mylibnet.h"
 /* banned ip */
-unordered_map<const char*,bool> hash_map;
+unordered_map<string,bool> hash_map;
 string banned_domains="top-1m.csv";
 
 const char* get_http_host(const char* http_data) {
@@ -82,39 +82,34 @@ static u_int32_t print_pkt (struct nfq_data *tb)
 bool isbanned(struct nfq_data *tb){ /* http 프로토콜의 host name 리턴 */
     u_int8_t* pkt;
     int ret = nfq_get_payload(tb, &pkt); /* payload size */
-    /* data parse */
-	/* ETH */
-	struct libnet_ether_hdr *eth_hdr =(struct libnet_ether_hdr*) pkt;
-	u_int16_t type = ntohs(eth_hdr->type);
-	if(type!=0x0800){
-		cout<<"Not a ip protocol\n";
-		return true;
-	}
-	/* IP */
-    struct libnet_ipv4_hdr *ip_hdr = (struct libnet_ipv4_hdr*)(pkt+14);
-    u_int8_t protocol = ip_hdr->ip_p;
+	struct libnet_ipv4_hdr *ip_hdr = (struct libnet_ipv4_hdr*)(pkt);
+	u_int8_t protocol = ip_hdr->ip_p;
 	u_int8_t ip_vhl = ip_hdr->ip_vhl;
 	u_int8_t ip_version = (ip_vhl & 0xf0)>>4;
 	u_int8_t ip_header_length = ip_vhl & 0x0f;
-	if(protocol!=0x6) {
-		cout<<"Not a tcp protocol\n";
-		return true;
+	if(protocol!=0x6){
+		cout<<"Not a TCP\n";
+		return false;
 	}
-    /* TCP */
-	struct libnet_tcp_hdr *tcp_hdr = (struct libnet_tcp_hdr*)(pkt+14+ip_header_length*4);
-    u_int8_t th_off = (tcp_hdr->th_off)>>4;
-    /* HTTP */
-	cout<<"IP length: "<<ip_header_length*4<<"\n";
-	cout<<"TCP length: "<<th_off*4<<"\n";
-    u_int8_t *data = pkt+14+ip_header_length*4+th_off*4;
-	/* strstr */
+	struct libnet_tcp_hdr *tcp_hdr = (struct libnet_tcp_hdr*)(pkt+ip_header_length*4);
+	u_int8_t th_off = (tcp_hdr->th_off)>>4;
+	u_int8_t *data = pkt + ip_header_length*4 + th_off*4;
+    /* data parse */
 	// Find HTTP host field
     const char* http_host = get_http_host(reinterpret_cast<const char*>(data));
 	 if (http_host) {
-        std::cout << "HTTP Host: " << http_host << std::endl;
-        delete[] http_host; // Remember to free the memory
+        cout << "HTTP Host: " << http_host << endl;
+		/* Banned? */
+		if(hash_map[string(http_host)]){
+			delete[] http_host; // free
+			return true;
+		}
+		else{
+			delete[] http_host; // free
+			return false;
+		} 
     } else {
-        std::cout << "HTTP Host not found" << std::endl;
+        cout << "HTTP Host not found" << endl;
     }
     return false;
 }
@@ -146,9 +141,9 @@ int main(int argc, char **argv)
 		size_t idx = line.find(',');
 		line = line.substr(idx+1);
 		cout<<line<<"\n";
-		hash_map[line.c_str()] = true;
+		hash_map[line] = true;
 	}
-
+	hash_map["test.gilgil.net"]=true;
 	struct nfq_handle *h;
 	struct nfq_q_handle *qh;
 	struct nfnl_handle *nh;
