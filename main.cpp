@@ -2,7 +2,8 @@
 #include "mylibnet.h"
 #define ETHER_LENGTH 6
 /* banned ip */
-string banned_domain;
+unordered_map<string,bool> hash_map;
+string banned_domains="top-1m.csv";
 
 /* returns packet id */
 static u_int32_t print_pkt (struct nfq_data *tb)
@@ -60,7 +61,6 @@ static u_int32_t print_pkt (struct nfq_data *tb)
 }
 
 bool getHostName(struct nfq_data *tb){ /* http 프로토콜의 host name 리턴 */
-    const char* ban = banned_domain.c_str();
     u_int8_t *pkt;
     int ret = nfq_get_payload(tb, &pkt); /* payload size */
     /* data parse */
@@ -72,11 +72,8 @@ bool getHostName(struct nfq_data *tb){ /* http 프로토콜의 host name 리턴 
     u_int8_t th_off = (tcp_hdr->th_off)>>4;
     /* HTTP */
     u_int8_t *data = pkt+ETHER_LENGTH+ip_header_length*4+th_off*4;
-    for(int i=0;i<ret-sizeof(ban);i++){
-        for(int j=0;j<sizeof(ban);j++){
-            if(data[i+j]!=ban[j]) return false;
-        }
-    }
+	/* strnstrn */
+
     return true;
 }
 
@@ -94,12 +91,18 @@ static int cb(struct nfq_q_handle *qh, struct nfgenmsg *nfmsg,
 
 int main(int argc, char **argv)
 {
-    if(argc!=2){
-        printf("Error usage!\n");
-        return -1;
-    }
-    /* convert domain name to IP */
-    banned_domain = string(argv[1]);
+
+    /* fread to make hash hit table */
+	ifstream fs;
+	fs.open(banned_domains);
+    if(!fs.is_open()){
+		cout<<"can't open banned domains files\n";
+		return -1;
+	}
+	string line;
+	while(getline(fs,line)){
+		cout<<line<<endl;
+	}
 
 	struct nfq_handle *h;
 	struct nfq_q_handle *qh;

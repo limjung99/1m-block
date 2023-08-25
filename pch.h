@@ -9,4 +9,8 @@
 #include <libnetfilter_queue/libnetfilter_queue.h>
 #include <netdb.h>
 #include <arpa/inet.h>
+#include <iostream>
+#include <fstream>
+#include <cstring>
+#include <unordered_map>
 using namespace std;
