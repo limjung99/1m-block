@@ -1,9 +1,28 @@
 #include "pch.h"
 #include "mylibnet.h"
-#define ETHER_LENGTH 6
 /* banned ip */
-unordered_map<string,bool> hash_map;
+unordered_map<const char*,bool> hash_map;
 string banned_domains="top-1m.csv";
+
+const char* get_http_host(const char* http_data) {
+    const char* host_marker = "Host: ";
+    const char* host_start = std::strstr(http_data, host_marker);
+    
+    if (host_start) {
+        host_start += std::strlen(host_marker);
+        const char* host_end = std::strchr(host_start, '\r'); // Find end of line
+        if (host_end) {
+            size_t host_length = host_end - host_start;
+            char* host = new char[host_length + 1];
+            strncpy(host, host_start, host_length);
+            host[host_length] = '\0';
+            return host;
+        }
+    }
+    
+    return nullptr;
+}
+
 
 /* returns packet id */
 static u_int32_t print_pkt (struct nfq_data *tb)
@@ -60,21 +79,44 @@ static u_int32_t print_pkt (struct nfq_data *tb)
 	return id;
 }
 
-bool getHostName(struct nfq_data *tb){ /* http 프로토콜의 host name 리턴 */
-    u_int8_t *pkt;
+bool isbanned(struct nfq_data *tb){ /* http 프로토콜의 host name 리턴 */
+    u_int8_t* pkt;
     int ret = nfq_get_payload(tb, &pkt); /* payload size */
     /* data parse */
-    struct libnet_ipv4_hdr *ip_hdr = (struct libnet_ipv4_hdr*)(pkt+ETHER_LENGTH);
-    u_int8_t ip_vhl = ip_hdr->ip_vhl;
-    u_int8_t ip_header_length = ip_vhl & 0x0f;
+	/* ETH */
+	struct libnet_ether_hdr *eth_hdr =(struct libnet_ether_hdr*) pkt;
+	u_int16_t type = ntohs(eth_hdr->type);
+	if(type!=0x0800){
+		cout<<"Not a ip protocol\n";
+		return true;
+	}
+	/* IP */
+    struct libnet_ipv4_hdr *ip_hdr = (struct libnet_ipv4_hdr*)(pkt+14);
+    u_int8_t protocol = ip_hdr->ip_p;
+	u_int8_t ip_vhl = ip_hdr->ip_vhl;
+	u_int8_t ip_version = (ip_vhl & 0xf0)>>4;
+	u_int8_t ip_header_length = ip_vhl & 0x0f;
+	if(protocol!=0x6) {
+		cout<<"Not a tcp protocol\n";
+		return true;
+	}
     /* TCP */
-	struct libnet_tcp_hdr *tcp_hdr = (struct libnet_tcp_hdr*)(pkt+ETHER_LENGTH+ip_header_length*4);
+	struct libnet_tcp_hdr *tcp_hdr = (struct libnet_tcp_hdr*)(pkt+14+ip_header_length*4);
     u_int8_t th_off = (tcp_hdr->th_off)>>4;
     /* HTTP */
-    u_int8_t *data = pkt+ETHER_LENGTH+ip_header_length*4+th_off*4;
-	/* strnstrn */
-
-    return true;
+	cout<<"IP length: "<<ip_header_length*4<<"\n";
+	cout<<"TCP length: "<<th_off*4<<"\n";
+    u_int8_t *data = pkt+14+ip_header_length*4+th_off*4;
+	/* strstr */
+	// Find HTTP host field
+    const char* http_host = get_http_host(reinterpret_cast<const char*>(data));
+	 if (http_host) {
+        std::cout << "HTTP Host: " << http_host << std::endl;
+        delete[] http_host; // Remember to free the memory
+    } else {
+        std::cout << "HTTP Host not found" << std::endl;
+    }
+    return false;
 }
 
 static int cb(struct nfq_q_handle *qh, struct nfgenmsg *nfmsg,
@@ -82,7 +124,7 @@ static int cb(struct nfq_q_handle *qh, struct nfgenmsg *nfmsg,
 {
 	u_int32_t id = print_pkt(nfa); /* print pkt를 통해 data 포인터에 패킷 시작주소가 담김 */
     /* http hostname get */
-    bool isBan = getHostName(nfa);
+    bool isBan = isbanned(nfa);
     if(isBan){
         return nfq_set_verdict(qh, id, NF_DROP, 0, NULL);
     }
@@ -101,7 +143,10 @@ int main(int argc, char **argv)
 	}
 	string line;
 	while(getline(fs,line)){
-		cout<<line<<endl;
+		size_t idx = line.find(',');
+		line = line.substr(idx+1);
+		cout<<line<<"\n";
+		hash_map[line.c_str()] = true;
 	}
 
 	struct nfq_handle *h;
